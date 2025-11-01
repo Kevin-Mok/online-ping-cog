@@ -1,0 +1,10 @@
+{
+  "author": ["Kevin Mok"],
+  "name": "onlineping",
+  "short": "Ping when tracked users come online.",
+  "description": "Pings requesters in a chosen channel when specified members switch to Online. Requires Guild Presences & Guild Members intents.",
+  "install_msg": "Use `[p]onlineping track @user #channel` to start. `[p]onlineping list` / `untrack` to manage.",
+  "tags": ["utility", "presence", "alerts"],
+  "end_user_data_statement": "Stores user IDs of requesters, target member IDs, and one channel ID per guild to deliver pings. No other personal data is collected.",
+  "min_bot_version": "3.5.0"
+}

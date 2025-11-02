@@ -1,4 +1,3 @@
-# onlineping/onlineping.py
 import discord
 from redbot.core import commands, Config, checks
 from redbot.core.bot import Red
@@ -8,8 +7,7 @@ STATUS_EMOJI = {
     discord.Status.offline: "⚫ offline",
     discord.Status.idle: "🌙 idle",
     discord.Status.dnd: "⛔ dnd",
-    # Some libraries expose 'invisible' separately; Discord clients show it as offline to others.
-    # We'll render it explicitly to be clear.
+    # Some libraries expose invisible distinctly; clients show it as offline to others.
     discord.Status.invisible: "⚫ invisible",
 }
 
@@ -23,7 +21,8 @@ class OnlinePing(commands.Cog):
         )
         # targets: {target_id: {"channel": int, "pingers": [int, ...]}}
         # mode: "online_only" or "all"
-        self.config.register_guild(targets={}, mode="online_only")
+        # prefs: {requester_id: {"mention": bool}}
+        self.config.register_guild(targets={}, mode="online_only", prefs={})
 
     @commands.group(name="onlineping", aliases=["op"])
     @commands.guild_only()
@@ -39,6 +38,20 @@ class OnlinePing(commands.Cog):
             return await ctx.send("Mode must be `online_only` or `all`.")
         await self.config.guild(ctx.guild).mode.set(mode)
         await ctx.send(f"OnlinePing mode set to **{mode}**.")
+
+    @op.command(name="pingme")
+    async def pingme(self, ctx, option: str):
+        """Choose whether YOU are mentioned on alerts: on/off."""
+        opt = option.lower()
+        if opt not in {"on", "off", "true", "false", "yes", "no"}:
+            return await ctx.send("Use `on` or `off`.")
+        mention = opt in {"on", "true", "yes"}
+        prefs = await self.config.guild(ctx.guild).prefs()
+        prefs[str(ctx.author.id)] = {"mention": mention}
+        await self.config.guild(ctx.guild).prefs.set(prefs)
+        await ctx.send(
+            f"I will **{'mention' if mention else 'not mention'}** you on OnlinePing alerts."
+        )
 
     @op.command(name="track")
     @checks.admin_or_permissions(manage_guild=True)
@@ -71,14 +84,20 @@ class OnlinePing(commands.Cog):
 
     @op.command(name="list")
     async def list_(self, ctx):
-        """List tracked members."""
+        """List tracked members + mode. Shows whether you'll be mentioned."""
         data = await self.config.guild(ctx.guild).targets()
+        prefs = await self.config.guild(ctx.guild).prefs()
         if not data:
             return await ctx.send("Nothing tracked.")
         lines = []
         for uid, entry in data.items():
             who = ctx.guild.get_member(int(uid))
-            pingers = ", ".join(f"<@{pid}>" for pid in entry["pingers"]) or "—"
+            pieces = []
+            for pid in entry["pingers"]:
+                mention_pref = prefs.get(str(pid), {}).get("mention", True)
+                label = f"<@{pid}>" if mention_pref else f"<@{pid}> (no ping)"
+                pieces.append(label)
+            pingers = ", ".join(pieces) or "—"
             lines.append(f"- {who.mention if who else uid} → <#{entry['channel']}> (ping: {pingers})")
         mode = await self.config.guild(ctx.guild).mode()
         lines.append(f"\nMode: **{mode}** (`online_only` or `all`)")
@@ -86,7 +105,7 @@ class OnlinePing(commands.Cog):
 
     @commands.Cog.listener()
     async def on_presence_update(self, before: discord.Member, after: discord.Member):
-        # Requires Intents.presences + Intents.members enabled in the Dev Portal and requested by the bot.
+        # Requires Intents.presences + Intents.members
         # Only act if STATUS changed (ignore pure activity changes).
         if before.guild is None or before.status == after.status:
             return
@@ -97,7 +116,6 @@ class OnlinePing(commands.Cog):
             return
 
         mode = await self.config.guild(after.guild).mode()
-        # Keep old behavior unless mode == "all"
         if mode == "online_only" and after.status != discord.Status.online:
             return
 
@@ -105,9 +123,19 @@ class OnlinePing(commands.Cog):
         if not ch:
             return
 
+        # Build mentions list honoring per-user 'mention' preference (default True)
+        prefs = await self.config.guild(after.guild).prefs()
+        mention_ids = [
+            pid for pid in entry["pingers"]
+            if prefs.get(str(pid), {}).get("mention", True)
+        ]
+        mentions = " ".join(f"<@{pid}>" for pid in mention_ids)
+
         before_label = STATUS_EMOJI.get(before.status, str(before.status))
         after_label  = STATUS_EMOJI.get(after.status,  str(after.status))
-        mentions = " ".join(f"<@{pid}>" for pid in entry["pingers"]) or ""
+
         await ch.send(
             f"{mentions} {after.mention} status changed: **{before_label} → {after_label}**."
+            if mentions else
+            f"{after.mention} status changed: **{before_label} → {after_label}**."
         )

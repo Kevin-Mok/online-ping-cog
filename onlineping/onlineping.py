@@ -134,8 +134,10 @@ class OnlinePing(commands.Cog):
         before_label = STATUS_EMOJI.get(before.status, str(before.status))
         after_label  = STATUS_EMOJI.get(after.status,  str(after.status))
 
-        await ch.send(
-            f"{mentions} {after.mention} status changed: **{before_label} → {after_label}**."
-            if mentions else
-            f"{after.mention} status changed: **{before_label} → {after_label}**."
-        )
+        # Build the base message first…
+        msg = f"{after.mention} status changed: **{before_label} → {after_label}**."
+        # …then add mentions at the very end (if any).
+        if mentions:
+            msg = f"{msg} {mentions}"
+
+        await ch.send(msg)
